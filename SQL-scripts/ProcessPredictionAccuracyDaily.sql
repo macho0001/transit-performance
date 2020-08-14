@@ -18,7 +18,7 @@ GO
 
 CREATE PROCEDURE dbo.ProcessPredictionAccuracyDaily
 
---Script Version: Master - 1.1.0.0
+--Script Version: Master - 1.1.0.0 - generic-all-agencies - 2
 
 --This procedure calculates daily prediction accuracy metrics.
 
@@ -34,6 +34,208 @@ BEGIN
 	DECLARE @service_date_process DATE
 	SET @service_date_process = @service_date 
 
+	DECLARE @exclude_route_ids TABLE
+	(
+		route_id		VARCHAR(255)
+	)	
+
+	DECLARE @deployment_name VARCHAR(255) = 'TCAT'
+
+	IF @deployment_name = 'CommTrans'
+
+		BEGIN
+		
+			IF OBJECT_ID('tempdb..#daily_actual_apc') IS NOT NULL
+				DROP TABLE #daily_actual_apc
+			;
+
+			CREATE TABLE #daily_actual_apc
+			(
+				service_date					DATE
+				,trip_code						VARCHAR(255)
+				,vehicle_id						VARCHAR(255)
+				,stop_id						VARCHAR(255)
+				,pattern_idx					INT
+				,scheduled_arrival_time_sec		INT
+				,scheduled_departure_time_sec	INT
+				,actual_arrival_time_sec		INT
+				,actual_departure_time_sec		INT
+			)
+
+			
+			DECLARE @tsql VARCHAR(8000)
+
+			SELECT @tsql =
+			'
+				SELECT * FROM OPENQUERY
+				(
+					MOBILEREPORTS_ODBC,
+					''
+							select distinct tr.OPD_DATE,
+							tr.TRIP_CODE,
+							tr.VEHICLE_ID,
+							st.POINT_ID as STOP_ID,
+							st.PATTERN_IDX,
+							st.NOM_ARR_TIME,
+							st.NOM_DEP_TIME,
+							st.ACT_ARR_TIME,
+							st.ACT_DEP_TIME
+							from OPD_TRIP tr 
+							join OPD_STOP st
+							on tr.OPD_DATE = st.OPD_DATE
+							  and tr.CODE_INTERNAL = st.CODE_INTERNAL_TRIP
+							where tr.OPD_DATE = TO_DATE(
+								''''' + CAST(@service_date_process AS VARCHAR) + '''''
+								,''''YYYY-MM-DD'''')
+							order by tr.OPD_DATE, tr.TRIP_CODE, PATTERN_IDX
+					''
+				)
+			'
+
+				INSERT INTO #daily_actual_apc
+				(
+						service_date					
+						,trip_code						
+						,vehicle_id						
+						,stop_id						
+						,pattern_idx					
+						,scheduled_arrival_time_sec		
+						,scheduled_departure_time_sec	
+						,actual_arrival_time_sec		
+						,actual_departure_time_sec		
+				)
+
+			EXEC (@tsql)
+
+			IF OBJECT_ID ('dbo.daily_actual') IS NOT NULL
+				DROP TABLE dbo.daily_actual
+
+			CREATE TABLE dbo.daily_actual
+			(
+				service_date				DATE NOT NULL
+				,route_id					VARCHAR(255) NULL
+				,route_type					INT NULL
+				,direction_id				INT NULL
+				,trip_id					VARCHAR(255) NOT NULL
+				,stop_id					VARCHAR(255) NOT NULL
+				,stop_sequence				INT NULL
+				,vehicle_id					VARCHAR(255) NULL
+				,actual_arrival_time		INT NOT NULL
+				,actual_arrival_time_sec	INT NOT NULL
+				,actual_departure_time		INT NOT NULL
+				,actual_departure_time_sec	INT NOT NULL
+				,suspect_record				BIT NOT NULL
+			)
+
+			INSERT INTO dbo.daily_actual
+			(
+				service_date				
+				,route_id				
+				,route_type				
+				,direction_id			
+				,trip_id					
+				,stop_id					
+				,stop_sequence				
+				,vehicle_id					
+				,actual_arrival_time		
+				,actual_arrival_time_sec	
+				,actual_departure_time		
+				,actual_departure_time_sec	
+				,suspect_record				
+			)
+
+				SELECT 
+					a.service_date
+					,t.route_id
+					,r.route_type
+					,t.direction_id
+					,t.trip_id
+					,a.stop_id
+					,a.pattern_idx + 1 as stop_sequence
+					,a.vehicle_id
+					,dbo.fnConvertDateTimeToEpoch(a.service_date) + a.actual_arrival_time_sec  actual_arrival_time
+					,a.actual_arrival_time_sec
+					,dbo.fnConvertDateTimeToEpoch(a.service_date) + a.actual_departure_time_sec as actual_departure_time
+					,a.actual_departure_time_sec
+					,0 as suspect_record
+				FROM #daily_actual_apc a
+				JOIN gtfs.trips t
+				ON
+					a.trip_code = LEFT(t.trip_id, charindex('__',t.trip_id)-1)	
+				LEFT JOIN gtfs.routes r
+				ON
+					r.route_id = t.route_id
+				WHERE
+						actual_arrival_time_sec IS NOT NULL
+					OR
+						actual_departure_time_sec IS NOT NULL
+
+				--mark actual times suspect
+				--records where there are duplicate arrival/departure times for a trip stop
+
+				UPDATE daily_actual
+				SET suspect_record = 1
+				FROM daily_actual ad
+					JOIN
+					(
+						SELECT
+							service_date
+							,route_id
+							,route_type
+							,trip_id
+							,stop_id
+							,stop_sequence
+							,COUNT(DISTINCT actual_arrival_time) AS count_actual_arrival
+							,COUNT(DISTINCT actual_departure_time) AS count_actual_departure
+						FROM daily_actual
+						GROUP BY
+							service_date
+							,route_id
+							,route_type
+							,trip_id
+							,stop_id
+							,stop_sequence
+						HAVING
+							COUNT(DISTINCT actual_arrival_time) > 1
+						OR
+							COUNT(DISTINCT actual_departure_time) > 1
+					) s
+					ON
+							ad.service_date = s.service_date
+						AND
+							ad.trip_id = s.trip_id
+						AND 
+							ad.stop_id = s.stop_id
+						AND
+							ad.stop_sequence = s.stop_sequence
+
+				--mark records where there are multiple vehicle ids per trip 
+				UPDATE daily_actual
+				SET suspect_record = 1
+				FROM daily_actual ad
+					JOIN 
+					(
+						SELECT
+							service_date
+							,trip_id
+							,COUNT(DISTINCT vehicle_id) AS count_vehicle
+						FROM daily_actual
+						GROUP BY
+							service_date
+							,trip_id
+						HAVING
+							COUNT(DISTINCT vehicle_id) > 1
+					) s
+					ON
+							ad.service_date = s.service_date
+						AND
+							ad.trip_id = s.trip_id	
+
+				IF OBJECT_ID ('tempdb..#daily_actual_apc') IS NOT NULL
+					DROP TABLE #daily_actual_apc
+
+		END
+
 	--store daily predictions from the trip_update_denormalized table
 	IF OBJECT_ID('dbo.daily_prediction', 'U') IS NOT NULL
 	  DROP TABLE dbo.daily_prediction
@@ -45,9 +247,11 @@ BEGIN
 		,file_time_dt					DATETIME
 		,route_id						VARCHAR(255)	NOT NULL
 		,trip_id						VARCHAR(255)	NOT NULL
-		,direction_id					INT				NOT NULL
+		,direction_id					INT				
+		,trip_schedule_relationship		VARCHAR(255)									  
 		,stop_id						VARCHAR(255)	NOT NULL
 		,stop_sequence					INT				NOT NULL
+		,stop_schedule_relationship		VARCHAR(255)								   
 		,vehicle_id						VARCHAR(255) 
 		,vehicle_label					VARCHAR(255) 
 		,predicted_arrival_time			INT				
@@ -66,8 +270,10 @@ BEGIN
 		,route_id
 		,trip_id
 		,direction_id
+		,trip_schedule_relationship					 
 		,stop_id
 		,stop_sequence
+		,stop_schedule_relationship					 
 		,vehicle_id
 		,vehicle_label
 		,predicted_arrival_time
@@ -78,25 +284,37 @@ BEGIN
 	)
 
 	SELECT
-		CONVERT(DATE, trip_start_date)
-		,p.header_timestamp
-		,dbo.fnConvertEpochToDateTime(p.header_timestamp)
+		@service_date_process as service_date
+		,p.header_timestamp as file_time
+		,dbo.fnConvertEpochToDateTime(p.header_timestamp) as file_time_dt
 		,p.route_id
 		,p.trip_id
 		,p.direction_id
+		,p.trip_schedule_relationship					   
 		,p.stop_id
 		,p.stop_sequence
+		,p.stop_schedule_relationship					   
 		,p.vehicle_id
 		,p.vehicle_label
 		,p.predicted_arrival_time
 		,p.predicted_departure_time
-		,p.predicted_arrival_time - dbo.fnConvertDateTimeToEpoch(trip_start_date)
-		,p.predicted_departure_time - dbo.fnConvertDateTimeToEpoch(trip_start_date)
+		,p.predicted_arrival_time - dbo.fnConvertDateTimeToEpoch(trip_start_date) as predicted_arrival_time_sec
+		,p.predicted_departure_time - dbo.fnConvertDateTimeToEpoch(trip_start_date) as predicted_departure_time_sec
 		,p.vehicle_timestamp
 	FROM dbo.gtfsrt_tripupdate_denormalized p
 
 	WHERE
 		CONVERT(DATE, p.trip_start_date) = @service_date_process
+
+	CREATE NONCLUSTERED INDEX IX_daily_prediction_direction_id ON dbo.daily_prediction (direction_id)
+	INCLUDE (trip_id)																								  
+
+	UPDATE dbo.daily_prediction
+		SET direction_id = t.direction_id
+		FROM gtfs.trips t
+		WHERE
+			dbo.daily_prediction.trip_id = t.trip_id
+			AND dbo.daily_prediction.direction_id IS NULL
 
 	--save the last prediction made during a given minute into a consolidated table 
 	--(e.g. if two predictions are made bw 1:20 and 1:21, say at 1:20:15 and 1:20:35, only the one made at 1:20:35 will be saved)
@@ -110,9 +328,11 @@ BEGIN
 		,file_time_dt				DATETIME
 		,route_id					VARCHAR(255)	NOT NULL
 		,trip_id					VARCHAR(255)	NOT NULL
-		,direction_id				INT				NOT NULL
+		,direction_id				INT				
+		,trip_schedule_relationship	VARCHAR(255)									 
 		,stop_id					VARCHAR(255)	NOT NULL
 		,stop_sequence				INT				NOT NULL
+		,stop_schedule_relationship	VARCHAR(255)								  
 		,vehicle_id					VARCHAR(255) 
 		,vehicle_label				VARCHAR(255) 
 		,predicted_arrival_time		INT 
@@ -131,8 +351,10 @@ BEGIN
 		,route_id
 		,trip_id
 		,direction_id
+		,trip_schedule_relationship					 
 		,stop_id
 		,stop_sequence
+		,stop_schedule_relationship					 
 		,vehicle_id
 		,vehicle_label
 		,predicted_arrival_time
@@ -149,8 +371,10 @@ BEGIN
 		,route_id
 		,trip_id
 		,direction_id
+		,trip_schedule_relationship					 
 		,stop_id
 		,stop_sequence
+		,stop_schedule_relationship					 
 		,vehicle_id
 		,vehicle_label
 		,predicted_arrival_time
@@ -166,8 +390,10 @@ BEGIN
 			,route_id
 			,trip_id
 			,direction_id
+			,trip_schedule_relationship				  
 			,stop_id
 			,stop_sequence
+			,stop_schedule_relationship				  
 			,vehicle_id
 			,vehicle_label
 			,predicted_arrival_time
@@ -195,9 +421,11 @@ BEGIN
 		,route_type					INT
 		,route_id					VARCHAR(255)	NOT NULL
 		,trip_id					VARCHAR(255)	NOT NULL
-		,direction_id				INT				NOT NULL
+		,direction_id				INT				
+		,trip_schedule_relationship	VARCHAR(255)							
 		,stop_id					VARCHAR(255)	NOT NULL
 		,stop_sequence				INT				NOT NULL
+		,stop_schedule_relationship	VARCHAR(255)						  
 		,vehicle_id					VARCHAR(255) 
 		,vehicle_label				VARCHAR(255) 
 		,stop_order_flag			INT --1 for origin, 2 for mid, 3 for destination stop
@@ -217,6 +445,11 @@ BEGIN
 		)
 	;
 
+--if using actuals from APC, include deployment in this section. Otherwise, actuals from VP will be used
+	IF @deployment_name = 'CommTrans'
+
+		BEGIN
+
 	INSERT INTO dbo.daily_prediction_disaggregate
 	(
 		service_date
@@ -226,8 +459,97 @@ BEGIN
 		,route_id
 		,trip_id
 		,direction_id
+				,trip_schedule_relationship			 
 		,stop_id
 		,stop_sequence
+				,stop_schedule_relationship			 
+				,vehicle_id
+				,vehicle_label
+				,stop_order_flag
+				,scheduled_arrival_time
+				,scheduled_departure_time	
+				,predicted_arrival_time
+				,predicted_departure_time
+				,predicted_arrival_time_sec		
+				,predicted_departure_time_sec	
+				,actual_arrival_time
+				,actual_departure_time
+				,arrival_seconds_away
+				,departure_seconds_away
+				,arrival_prediction_error
+				,departure_prediction_error
+				,vehicle_timestamp
+			)
+
+			SELECT
+				p.service_date
+				,p.file_time
+				,p.file_time_dt
+				,a.route_type
+				,p.route_id
+				,p.trip_id
+				,p.direction_id
+				,p.trip_schedule_relationship			   
+				,p.stop_id
+				,p.stop_sequence
+				,p.stop_schedule_relationship			   
+				,p.vehicle_id
+				,p.vehicle_label
+				,st.stop_order_flag AS stop_order_flag
+				,dbo.fnConvertDateTimeToEpoch(p.service_date)+st.arrival_time_sec AS scheduled_arrival_time
+				,dbo.fnConvertDateTimeToEpoch(p.service_date)+st.departure_time_sec AS scheduled_departure_time	
+				,p.predicted_arrival_time
+				,p.predicted_departure_time
+				,p.predicted_arrival_time_sec		
+				,p.predicted_departure_time_sec	
+				,a.actual_arrival_time
+				,a.actual_departure_time
+				,a.actual_arrival_time - p.file_time AS arrival_seconds_away
+				,a.actual_departure_time - p.file_time AS departure_seconds_away
+				,a.actual_arrival_time - p.predicted_arrival_time AS arrival_prediction_error
+				,a.actual_departure_time - p.predicted_departure_time AS departure_prediction_error
+				,p.vehicle_timestamp
+			FROM dbo.daily_prediction_consolidated p
+	
+			LEFT JOIN dbo.daily_actual a
+				ON
+					p.service_date = a.service_date 
+				AND
+					p.trip_id = a.trip_id
+				AND
+					p.stop_id = a.stop_id
+				AND
+					p.stop_sequence = a.stop_sequence
+				AND
+					a.suspect_record = 0 
+
+			LEFT JOIN gtfs.stop_times st
+				ON
+					p.trip_id = st.trip_id
+				AND
+					p.stop_id = st.stop_id
+				AND
+					p.stop_sequence = st.stop_sequence
+
+		END
+
+	ELSE
+
+		BEGIN												  
+
+	INSERT INTO dbo.daily_prediction_disaggregate
+	(
+		service_date
+		,file_time
+		,file_time_dt
+		,route_type
+		,route_id
+		,trip_id
+		,direction_id
+		,trip_schedule_relationship	
+		,stop_id
+		,stop_sequence
+		,stop_schedule_relationship
 		,vehicle_id
 		,vehicle_label
 		,stop_order_flag
@@ -254,8 +576,10 @@ BEGIN
 		,p.route_id
 		,p.trip_id
 		,p.direction_id
+		,p.trip_schedule_relationship
 		,p.stop_id
 		,p.stop_sequence
+		,p.stop_schedule_relationship
 		,p.vehicle_id
 		,p.vehicle_label
 		,st.stop_order_flag AS stop_order_flag
@@ -267,8 +591,8 @@ BEGIN
 		,p.predicted_departure_time_sec	
 		,e1.event_time AS actual_arrival_time
 		,e2.event_time AS actual_departure_time
-		,p.predicted_arrival_time - p.file_time AS arrival_seconds_away
-		,p.predicted_departure_time - p.file_time AS departure_seconds_away
+		,e1.event_time - p.file_time AS arrival_seconds_away
+		,e2.event_time - p.file_time AS departure_seconds_away
 		,e1.event_time - p.predicted_arrival_time AS arrival_prediction_error
 		,e2.event_time - p.predicted_departure_time AS departure_prediction_error
 		,p.vehicle_timestamp
@@ -312,6 +636,8 @@ BEGIN
 		AND
 			p.stop_sequence = st.stop_sequence
 
+	END 
+
 	--create table with bins and thresholds for each prediction
 	IF OBJECT_ID('dbo.daily_prediction_threshold','U') IS NOT NULL
 		DROP TABLE dbo.daily_prediction_threshold
@@ -324,8 +650,10 @@ BEGIN
 		,route_id					VARCHAR(255)	NOT NULL
 		,trip_id					VARCHAR(255)	NOT NULL
 		,direction_id				INT				NOT NULL
+		,trip_schedule_relationship	VARCHAR(255)								   
 		,stop_id					VARCHAR(255)	NOT NULL
 		,stop_sequence				INT				NOT NULL
+		,stop_schedule_relationship	VARCHAR(255)								  
 		,stop_order_flag			INT --1 for origin, 2 for mid, 3 for destination stop
 		,predicted_time				INT
 		,actual_time				INT
@@ -349,8 +677,10 @@ BEGIN
 		,route_id					
 		,trip_id				
 		,direction_id			
+		,trip_schedule_relationship							
 		,stop_id					
 		,stop_sequence				
+		,stop_schedule_relationship								 
 		,stop_order_flag			
 		,predicted_time				
 		,actual_time				
@@ -373,8 +703,10 @@ BEGIN
 		,t.route_id
 		,t.trip_id
 		,t.direction_id
+		,t.trip_schedule_relationship					   
 		,t.stop_id
 		,t.stop_sequence
+		,t.stop_schedule_relationship					   
 		,t.stop_order_flag
 		,t.predicted_time
 		,t.actual_time
@@ -398,8 +730,10 @@ BEGIN
 				,b.route_id
 				,b.trip_id
 				,b.direction_id
+				,b.trip_schedule_relationship				 
 				,b.stop_id
 				,b.stop_sequence
+				,b.stop_schedule_relationship				 
 				,b.stop_order_flag
 				,b.file_time
 				,b.file_time_dt
@@ -447,13 +781,13 @@ BEGIN
 
 	--calculate prediction quality
 
-	--create table for daily metrics
-	IF OBJECT_ID('dbo.daily_prediction_metrics', 'U') IS NOT NULL
-	  DROP TABLE dbo.daily_prediction_metrics
+--create table for daily systemwide metrics
+	IF OBJECT_ID('dbo.daily_prediction_metrics_system', 'U') IS NOT NULL
+	  DROP TABLE dbo.daily_prediction_metrics_system
 	;
 
-	CREATE TABLE dbo.daily_prediction_metrics(
-		route_id								VARCHAR(255) NOT NULL
+	CREATE TABLE dbo.daily_prediction_metrics_system(
+		service_date							DATE NOT NULL
 		,threshold_id							VARCHAR(255) NOT NULL
 		,threshold_name							VARCHAR(255) NOT NULL
 		,threshold_type							VARCHAR(255) NOT NULL
@@ -463,8 +797,8 @@ BEGIN
 	)
 	;
 
-	INSERT INTO dbo.daily_prediction_metrics(
-		route_id
+	INSERT INTO dbo.daily_prediction_metrics_system(
+		service_date
 		,threshold_id
 		,threshold_name
 		,threshold_type
@@ -473,9 +807,8 @@ BEGIN
 		,metric_result
 	)
 
-
 	SELECT
-		route_id
+		@service_date_process
 		,cpt.threshold_id
 		,cpt.threshold_name
 		,cpt.threshold_type
@@ -489,13 +822,274 @@ BEGIN
 				dpt.threshold_id = cpt.threshold_id
 			AND
 				dpt.route_type = cpt.route_type
+	WHERE 
+			dpt.service_date = @service_date_process
+		AND
+			dpt.route_id NOT IN (SELECT route_id FROM @exclude_route_ids)
+	GROUP BY 
+		cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+	ORDER BY 
+		cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type	
+		
+	--create table for daily route type metrics
+	IF OBJECT_ID('dbo.daily_prediction_metrics_route_type', 'U') IS NOT NULL
+	  DROP TABLE dbo.daily_prediction_metrics_route_type
+	;
+
+	CREATE TABLE dbo.daily_prediction_metrics_route_type(
+		service_date							DATE NOT NULL
+		,route_desc								VARCHAR(255) NOT NULL
+		,threshold_id							VARCHAR(255) NOT NULL
+		,threshold_name							VARCHAR(255) NOT NULL
+		,threshold_type							VARCHAR(255) NOT NULL
+		,total_predictions_within_threshold		INT
+		,total_predictions_in_bin				INT
+		,metric_result							FLOAT
+	)
+	;
+
+	INSERT INTO dbo.daily_prediction_metrics_route_type(
+		service_date							
+		,route_desc
+		,threshold_id
+		,threshold_name
+		,threshold_type
+		,total_predictions_within_threshold
+		,total_predictions_in_bin
+		,metric_result
+	)
+
+	SELECT
+		@service_date_process
+		,r.route_desc
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+		,SUM(prediction_within_threshold) AS total_predictions_within_threshold
+		,SUM(prediction_in_bin) AS total_predictions_in_bin
+		,SUM(prediction_within_threshold)/(SUM(prediction_in_bin)*1.0) AS metric_result
+	FROM
+		dbo.daily_prediction_threshold dpt
+	JOIN dbo.config_prediction_threshold cpt
+		ON 
+				dpt.threshold_id = cpt.threshold_id
+			AND
+				dpt.route_type = cpt.route_type
+	-- JOIN gtfs.trips t
+		-- ON
+			-- dpt.trip_id = t.trip_id
+	JOIN dbo.config_route_description r
+		ON
+			dpt.route_id = r.route_id
+	WHERE 
+		dpt.service_date = @service_date_process
+	GROUP BY 
+		r.route_desc
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+	ORDER BY 
+		r.route_desc
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+
+	--create table for daily route metrics
+	IF OBJECT_ID('dbo.daily_prediction_metrics_route', 'U') IS NOT NULL
+	  DROP TABLE dbo.daily_prediction_metrics_route
+	;
+
+	CREATE TABLE dbo.daily_prediction_metrics_route(
+		service_date							DATE NOT NULL						  
+		,route_id								VARCHAR(255) NOT NULL
+		--,route_desc								VARCHAR(255) NOT NULL								  
+		,threshold_id							VARCHAR(255) NOT NULL
+		,threshold_name							VARCHAR(255) NOT NULL
+		,threshold_type							VARCHAR(255) NOT NULL
+		,total_predictions_within_threshold		INT
+		,total_predictions_in_bin				INT
+		,metric_result							FLOAT
+	)
+	;
+
+	INSERT INTO dbo.daily_prediction_metrics_route(
+		service_date	  
+		,route_id
+		--,route_desc	 
+		,threshold_id
+		,threshold_name
+		,threshold_type
+		,total_predictions_within_threshold
+		,total_predictions_in_bin
+		,metric_result
+	)
+
+	SELECT
+		@service_date_process			   
+		,dpt.route_id
+		--,r.route_desc	   
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+		,SUM(prediction_within_threshold) AS total_predictions_within_threshold
+		,SUM(prediction_in_bin) AS total_predictions_in_bin
+		,SUM(prediction_within_threshold)/(SUM(prediction_in_bin)*1.0) AS metric_result
+	FROM
+		dbo.daily_prediction_threshold dpt
+	JOIN dbo.config_prediction_threshold cpt
+		ON 
+				dpt.threshold_id = cpt.threshold_id
+			AND
+				dpt.route_type = cpt.route_type
+	-- JOIN gtfs.trips t
+		-- ON
+			-- dpt.trip_id = t.trip_id
+	LEFT JOIN dbo.config_route_description r
+		ON
+			dpt.route_id = r.route_id
+	WHERE 
+		dpt.service_date = @service_date_process					 
+	GROUP BY 
+		dpt.route_id
+		--,r.route_desc	   
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+	ORDER BY 
+		dpt.route_id
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+
+	--create table for daily trip metrics
+	IF OBJECT_ID('dbo.daily_prediction_metrics_trip', 'U') IS NOT NULL
+	  DROP TABLE dbo.daily_prediction_metrics_trip
+	;
+
+	CREATE TABLE dbo.daily_prediction_metrics_trip(
+		service_date							DATE			NOT NULL
+		,route_id								VARCHAR(255)	NOT NULL
+		,direction_id							INT				NOT NULL									   
+		,trip_id								VARCHAR(255)	NOT NULL
+		,threshold_id							VARCHAR(255)	NOT NULL
+		,threshold_name							VARCHAR(255)	NOT NULL
+		,threshold_type							VARCHAR(255)	NOT NULL
+		,total_predictions_within_threshold		INT
+		,total_predictions_in_bin				INT
+		,metric_result							FLOAT
+	)
+	;
+
+	INSERT INTO dbo.daily_prediction_metrics_trip(
+		service_date
+		,route_id								
+		,direction_id							
+		,trip_id														
+		,threshold_id							
+		,threshold_name							
+		,threshold_type							
+		,total_predictions_within_threshold	
+		,total_predictions_in_bin							
+		,metric_result							
+	)
+
+	SELECT
+		@service_date_process
+		,route_id
+		,direction_id
+		,trip_id
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+		,SUM(prediction_within_threshold) AS total_predictions_within_threshold
+		,SUM(prediction_in_bin) AS total_in_bin
+		,SUM(prediction_within_threshold)/(SUM(prediction_in_bin)*1.0) AS metric_result
+	FROM
+		dbo.daily_prediction_threshold dpt
+	JOIN dbo.config_prediction_threshold cpt
+		ON 
+				dpt.threshold_id = cpt.threshold_id
+			AND
+				dpt.route_type = cpt.route_type
+	WHERE 
+		dpt.service_date = @service_date_process
 	GROUP BY 
 		route_id
+		,direction_id
+		,trip_id
 		,cpt.threshold_id
 		,cpt.threshold_name
 		,cpt.threshold_type
 	ORDER BY 
 		route_id
+		,direction_id
+		,trip_id
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+		
+		--create table for daily stop metrics
+	IF OBJECT_ID('dbo.daily_prediction_metrics_stop', 'U') IS NOT NULL
+	  DROP TABLE dbo.daily_prediction_metrics_stop
+	;
+
+	CREATE TABLE dbo.daily_prediction_metrics_stop(
+		service_date							DATE NOT NULL
+		,route_id								VARCHAR(255)	NOT NULL
+		,stop_id								VARCHAR(255)	NOT NULL
+		,threshold_id							VARCHAR(255)	NOT NULL
+		,threshold_name							VARCHAR(255)	NOT NULL
+		,threshold_type							VARCHAR(255)	NOT NULL
+		,total_predictions_within_threshold		INT
+		,total_predictions_in_bin				INT
+		,metric_result							FLOAT
+	)
+	;
+
+	INSERT INTO dbo.daily_prediction_metrics_stop(
+		service_date
+		,route_id
+		,stop_id
+		,threshold_id							
+		,threshold_name							
+		,threshold_type							
+		,total_predictions_within_threshold	
+		,total_predictions_in_bin							
+		,metric_result							
+	)
+
+	SELECT
+		@service_date_process
+		,route_id
+		,stop_id
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+		,SUM(prediction_within_threshold) AS total_predictions_within_threshold
+		,SUM(prediction_in_bin) AS total_in_bin
+		,SUM(prediction_within_threshold)/(SUM(prediction_in_bin)*1.0) AS metric_result
+	FROM
+		dbo.daily_prediction_threshold dpt
+	JOIN dbo.config_prediction_threshold cpt
+		ON 
+				dpt.threshold_id = cpt.threshold_id
+			AND
+				dpt.route_type = cpt.route_type
+	WHERE 
+		dpt.service_date = @service_date_process
+	GROUP BY 
+		route_id
+		,stop_id
+		,cpt.threshold_id
+		,cpt.threshold_name
+		,cpt.threshold_type
+	ORDER BY 
+		route_id
+		,stop_id
 		,cpt.threshold_id
 		,cpt.threshold_name
 		,cpt.threshold_type
@@ -506,7 +1100,8 @@ BEGIN
 	;
 
 	CREATE TABLE dbo.daily_prediction_metrics_disaggregate(
-		route_id								VARCHAR(255)	NOT NULL
+		service_date							DATE 			NOT NULL
+		,route_id								VARCHAR(255)	NOT NULL
 		,direction_id							INT				NOT NULL
 		,stop_id								VARCHAR(255)	NOT NULL
 		,time_slice_id							VARCHAR(255)	NOT NULL
@@ -520,7 +1115,8 @@ BEGIN
 	;
 
 	INSERT INTO dbo.daily_prediction_metrics_disaggregate(
-		route_id								
+		service_date
+		,route_id								
 		,direction_id							
 		,stop_id								
 		,time_slice_id							
@@ -533,7 +1129,8 @@ BEGIN
 	)
 
 	SELECT
-		route_id
+		@service_date_process
+		,route_id
 		,direction_id
 		,stop_id
 		,time_slice_id
@@ -567,21 +1164,95 @@ BEGIN
 		,cpt.threshold_name
 		,cpt.threshold_type
 
-	--write to historical table
+	--write to historical tables
+	
+	IF
+		(
+			SELECT
+				COUNT(*)
+			FROM dbo.historical_prediction_metrics_system
+			WHERE
+				service_date = @service_date_process
+		)
+		> 0
+
+		DELETE FROM dbo.historical_prediction_metrics_system
+		WHERE
+			service_date = @service_date_process
+
+	INSERT INTO dbo.historical_prediction_metrics_system
+	(
+		service_date
+		,threshold_id
+		,threshold_name
+		,threshold_type
+		,total_predictions_within_threshold
+		,total_predictions_in_bin
+		,metric_result
+	)
+
+	SELECT
+		service_date
+		,threshold_id
+		,threshold_name
+		,threshold_type
+		,total_predictions_within_threshold
+		,total_predictions_in_bin
+		,metric_result
+	FROM daily_prediction_metrics_system
+
 	IF 
 	(
 		SELECT
 			COUNT(*)
-		FROM dbo.historical_prediction_metrics
+			FROM dbo.historical_prediction_metrics_route_type
+			WHERE
+				service_date = @service_date_process
+		)
+		> 0
+
+		DELETE FROM dbo.historical_prediction_metrics_route_type
 		WHERE
 			service_date = @service_date_process 
-	) > 0
 
-	DELETE FROM dbo.historical_prediction_metrics
+	INSERT INTO dbo.historical_prediction_metrics_route_type
+    (
+		service_date
+		,route_desc
+		,threshold_id
+		,threshold_name
+		,threshold_type
+		,total_predictions_within_threshold
+		,total_predictions_in_bin
+		,metric_result
+	)
+	
+	SELECT
+		service_date
+		,route_desc
+		,threshold_id
+		,threshold_name
+		,threshold_type
+		,total_predictions_within_threshold
+		,total_predictions_in_bin
+		,metric_result
+	FROM daily_prediction_metrics_route_type
+	
+	IF 
+		(
+			SELECT
+				COUNT(*)
+			FROM dbo.historical_prediction_metrics_route
+			WHERE
+				service_date = @service_date_process 
+		)
+		> 0
+
+	DELETE FROM dbo.historical_prediction_metrics_route
 	WHERE
 		service_date = @service_date_process
 
-	INSERT INTO dbo.historical_prediction_metrics
+	INSERT INTO dbo.historical_prediction_metrics_route
 		(
 			service_date
 			,route_id								
@@ -594,16 +1265,95 @@ BEGIN
 		)
 
 	SELECT 
-			@service_date_process
+			service_date
 			,route_id	
 			,threshold_id
 			,threshold_name
 			,threshold_type
 			,total_predictions_within_threshold
 			,total_predictions_in_bin
-			,metric_result
+			,metric_result	
+	FROM dbo.daily_prediction_metrics_route 
+
+	IF
+		(
+			SELECT
+				COUNT(*)
+			FROM dbo.historical_prediction_metrics_trip
+			WHERE
+				service_date = @service_date_process
+		)
+		> 0
+
+	DELETE FROM dbo.historical_prediction_metrics_trip
+	WHERE
+		service_date = @service_date_process
+
+	INSERT INTO dbo.historical_prediction_metrics_trip
+		(
+			service_date
+			,route_id								
+		,direction_id
+		,trip_id
+			,threshold_id							
+			,threshold_name							
+			,threshold_type							
+			,total_predictions_within_threshold	
+			,total_predictions_in_bin							
+			,metric_result							
+		)
+
+	SELECT 
+		service_date
+		,route_id
+		,direction_id
+		,trip_id
+		,threshold_id
+		,threshold_name
+		,threshold_type
+		,total_predictions_within_threshold
+		,total_predictions_in_bin
+		,metric_result
+	FROM daily_prediction_metrics_trip
 	
-	FROM dbo.daily_prediction_metrics 
+	IF
+		(
+			SELECT
+				COUNT(*)
+			FROM dbo.historical_prediction_metrics_stop
+			WHERE
+				service_date = @service_date_process
+		)
+		> 0
+
+		DELETE FROM dbo.historical_prediction_metrics_stop
+		WHERE
+			service_date = @service_date_process
+
+	INSERT INTO dbo.historical_prediction_metrics_stop
+    (
+		service_date
+			,route_id	
+		,stop_id
+			,threshold_id
+			,threshold_name
+			,threshold_type
+			,total_predictions_within_threshold
+			,total_predictions_in_bin
+			,metric_result
+	)
+	
+	SELECT
+		service_date
+		,route_id
+		,stop_id
+		,threshold_id
+		,threshold_name
+		,threshold_type
+		,total_predictions_within_threshold
+		,total_predictions_in_bin
+		,metric_result
+	FROM daily_prediction_metrics_stop
 
 	IF 
 	(

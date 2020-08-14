@@ -7,17 +7,21 @@ namespace gtfsrt_events_tu_latest_prediction
         /// <summary>
         /// The main entry point for the application.
         /// </summary>
-        static void Main()
+        static void Main(string[] args)
         {
-#if (!DEBUG)
-            var ServicesToRun = new ServiceBase[]
-                                {
-                                    new gtfsrt_events_tu_latest_prediction_service()
-                                };
-            ServiceBase.Run(ServicesToRun);
-#else
-            gtfsrt_events_tu_latest_prediction_service.Start();
-#endif
+            if (args.Length > 0 && args[0] == "noservice")
+            {
+
+                gtfsrt_events_tu_latest_prediction_service.Start();
+            }
+            else
+            {
+
+
+                var ServicesToRun = new ServiceBase[] { new gtfsrt_events_tu_latest_prediction_service() };
+                ServiceBase.Run(ServicesToRun);
+            }
+
         }
     }
 }

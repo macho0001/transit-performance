@@ -7,11 +7,12 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 
-using GtfsRealtimeLib;
 
 using log4net;
 
 using ProtoBuf;
+
+using TransitRealtime;
 
 namespace gtfsrt_events_vp_current_status
 {
@@ -65,7 +66,7 @@ namespace gtfsrt_events_vp_current_status
              * Check the file time stamp, if it is same as previous one,
              * do not process any further as there is no update
              */
-            var currentFileTimestamp = feedMessages.header.timestamp;
+            var currentFileTimestamp = feedMessages.Header.Timestamp;
 
             Log.Info("currentFileTimestamp: " + currentFileTimestamp + " previousFileTimestamp: " + previousFileTimestamp);
 
@@ -117,7 +118,7 @@ namespace gtfsrt_events_vp_current_status
 
         private void AddNewEntityToEternalEntitySet(KeyValuePair<VehicleEntity, Entity> entry)
         {
-            if (VehicleCurrentStopStatus.STOPPED_AT.ToString().Equals(entry.Value.currentStopStatus))
+            if (VehiclePosition.VehicleStopStatus.StoppedAt.ToString().Equals(entry.Value.currentStopStatus, StringComparison.OrdinalIgnoreCase))
             {
                 EternalEntitySet.Add(entry.Key, entry.Value);
                 GenerateArrivalEvent(entry.Key);
@@ -173,7 +174,7 @@ namespace gtfsrt_events_vp_current_status
             {
                 UpdateEternalEntitySet(EphemeralEntitySet, vehicleEntity, 1);
             }
-            if (VehicleCurrentStopStatus.STOPPED_AT.ToString().Equals(currentStatus))
+            if (VehiclePosition.VehicleStopStatus.StoppedAt.ToString().Equals(currentStatus, StringComparison.OrdinalIgnoreCase))
             {
                 UpdateEternalEntitySet(EphemeralEntitySet, vehicleEntity, 0);
                 GenerateArrivalEvent(vehicleEntity);
@@ -260,7 +261,7 @@ namespace gtfsrt_events_vp_current_status
         private void InitializeEternalEntitySet(Dictionary<VehicleEntity, Entity> EphemeralEntitySet)
         {
             EternalEntitySet = new Dictionary<VehicleEntity, Entity>();
-            foreach (var entry in EphemeralEntitySet.Where(entry => VehicleCurrentStopStatus.STOPPED_AT.ToString().Equals(entry.Value.currentStopStatus)))
+            foreach (var entry in EphemeralEntitySet.Where(entry => VehiclePosition.VehicleStopStatus.StoppedAt.ToString().Equals(entry.Value.currentStopStatus, StringComparison.OrdinalIgnoreCase)))
             {
                 EternalEntitySet.Add(entry.Key, entry.Value);
                 GenerateArrivalEvent(entry.Key);

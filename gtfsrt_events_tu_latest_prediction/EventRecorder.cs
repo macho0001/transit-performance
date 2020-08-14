@@ -7,13 +7,14 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 
-using GtfsRealtimeLib;
 
 using log4net;
 
 using Newtonsoft.Json;
 
 using ProtoBuf;
+
+using TransitRealtime;
 
 namespace gtfsrt_events_tu_latest_prediction
 {
@@ -101,7 +102,7 @@ namespace gtfsrt_events_tu_latest_prediction
                 return;
             WriteFeedMessageToFile(feedMessage);
 
-            var fileTimestamp = feedMessage.header.timestamp;
+            var fileTimestamp = feedMessage.Header.Timestamp;
             if (fileTimestamp == FileTimestamp)
             {
                 Log.Info("Current file has same timestamp as previous one.");
@@ -190,31 +191,31 @@ namespace gtfsrt_events_tu_latest_prediction
         private Dictionary<EntityIdentifier, Entity> GetEntites(FeedMessage feedMessage)
         {
             var entities = new Dictionary<EntityIdentifier, Entity>();
-            var feedEntities = feedMessage.entity;
+            var feedEntities = feedMessage.Entities;
 
             foreach (var feedEntity in feedEntities)
             {
-                if (AcceptList.Any(x => !string.IsNullOrEmpty(x)) && !AcceptList.Contains(feedEntity.trip_update.trip.route_id))
+                if (AcceptList.Any(x => !string.IsNullOrEmpty(x)) && !AcceptList.Contains(feedEntity.TripUpdate.Trip.RouteId))
                     continue;
 
-                var tripId = feedEntity.trip_update.trip.trip_id;
-                var vehicleId = feedEntity.trip_update.vehicle?.id;
-                var vehicleLabel = feedEntity.trip_update.vehicle?.label;
-                var routeId = feedEntity.trip_update.trip.route_id;
-                var _serviceDate = feedEntity.trip_update.trip.start_date;
+                var tripId = feedEntity.TripUpdate.Trip.TripId;
+                var vehicleId = feedEntity.TripUpdate.Vehicle?.Id;
+                var vehicleLabel = feedEntity.TripUpdate.Vehicle?.Label;
+                var routeId = feedEntity.TripUpdate.Trip.RouteId;
+                var _serviceDate = feedEntity.TripUpdate.Trip.StartDate;
                 var serviceDate = DateTime.ParseExact(_serviceDate, "yyyyMMdd", CultureInfo.InvariantCulture);
-                var fileTimestamp = feedMessage.header.timestamp;
-                var directionId = feedEntity.trip_update.trip.direction_id;
+                var fileTimestamp = feedMessage.Header.Timestamp;
+                var directionId = feedEntity.TripUpdate.Trip.DirectionId;
 
-                foreach (var stop in feedEntity.trip_update.stop_time_update)
+                foreach (var stop in feedEntity.TripUpdate.StopTimeUpdates)
                 {
-                    var stopId = stop.stop_id;
-                    var stopSequence = stop.stop_sequence;
+                    var stopId = stop.StopId;
+                    var stopSequence = stop.StopSequence;
 
                     //add arrival entity
-                    if (stop.arrival != null)
+                    if (stop.Arrival != null)
                     {
-                        var eventTimeArrival = stop.arrival.time;
+                        var eventTimeArrival = stop.Arrival.Time;
                         const EventType eventType = EventType.PRA;
                         var entity = new Entity(serviceDate,
                                                 routeId,
@@ -247,10 +248,10 @@ namespace gtfsrt_events_tu_latest_prediction
                     }
 
                     //add departure entity
-                    if (stop.departure == null)
+                    if (stop.Departure == null)
                         continue;
                     {
-                        var eventTimeDeparture = stop.departure.time;
+                        var eventTimeDeparture = stop.Departure.Time;
                         const EventType eventType = EventType.PRD;
                         var entity = new Entity(serviceDate,
                                                 routeId,

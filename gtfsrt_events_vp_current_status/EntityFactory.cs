@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Configuration;
 
-using GtfsRealtimeLib;
+using TransitRealtime;
 
 namespace gtfsrt_events_vp_current_status
 {
@@ -9,7 +9,7 @@ namespace gtfsrt_events_vp_current_status
     {
         internal Dictionary<VehicleEntity, Entity> ProduceEntites(FeedMessage feedMessages)
         {
-            var feedEntityList = feedMessages.entity;
+            var feedEntityList = feedMessages.Entities;
             var vehicleEntitySet = new Dictionary<VehicleEntity, Entity>();
 
             var includeEntitiesWithoutTrip = ConfigurationManager.AppSettings["IncludeEntitiesWithoutTrip"].ToUpper();
@@ -18,26 +18,26 @@ namespace gtfsrt_events_vp_current_status
             {
                 //if a trip id exists for this entity or if config parameter says to include entities without a trip id 
                 //then do the following...else skip (discard) this entity
-                if (feedEntity.vehicle.trip == null && !"TRUE".Equals(includeEntitiesWithoutTrip))
+                if (feedEntity.Vehicle.Trip == null && !"TRUE".Equals(includeEntitiesWithoutTrip))
                     continue;
 
-                var currentStopStatus = feedEntity.vehicle.current_status.ToString();
-                var tripId = feedEntity.vehicle?.trip?.trip_id;
-                var routeId = feedEntity.vehicle?.trip?.route_id;
-                var stopId = feedEntity.vehicle.stop_id;
-                var stopSequence = feedEntity.vehicle.current_stop_sequence;
-                var vehicletimeStamp = feedEntity.vehicle.timestamp;
-                var VehicleId = feedEntity.vehicle.vehicle.id;
-                var VehicleLabel = feedEntity.vehicle.vehicle.label;
-                var fileStamp = feedMessages.header.timestamp;
-                var startDate = feedEntity.vehicle?.trip?.start_date;
-                var directionId = feedEntity.vehicle?.trip?.direction_id;
+                var currentStopStatus = feedEntity.Vehicle.CurrentStatus.ToString();
+                var tripId = feedEntity.Vehicle?.Trip?.TripId;
+                var routeId = feedEntity.Vehicle?.Trip?.RouteId;
+                var stopId = feedEntity.Vehicle.StopId;
+                var stopSequence = feedEntity.Vehicle.CurrentStopSequence;
+                var vehicletimeStamp = feedEntity.Vehicle.Timestamp;
+                var vehicleId = feedEntity.Vehicle.Vehicle.Id;
+                var vehicleLabel = feedEntity.Vehicle.Vehicle.Label;
+                var fileStamp = feedMessages.Header.Timestamp;
+                var startDate = feedEntity.Vehicle?.Trip?.StartDate;
+                var directionId = feedEntity.Vehicle?.Trip?.DirectionId;
                 var entity = new Entity(tripId, routeId, stopId, stopSequence, currentStopStatus, vehicletimeStamp, fileStamp, startDate, directionId);
                 var vehicleEntity = new VehicleEntity
                                     {
-                                        VehicleId = VehicleId,
-                                        VehicleLabel = VehicleLabel,
-                                        tripId = feedEntity.vehicle?.trip?.trip_id
+                                        VehicleId = vehicleId,
+                                        VehicleLabel = vehicleLabel,
+                                        tripId = feedEntity.Vehicle?.Trip?.TripId
                                     };
                 if (vehicleEntitySet.ContainsKey(vehicleEntity))
                 {

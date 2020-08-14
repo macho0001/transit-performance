@@ -12,35 +12,49 @@ namespace gtfsrt_tripupdate_denormalized
     {
         internal static ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static void Main()
+        private static void Main(string[] args)
         {
             XmlConfigurator.Configure();
             Log.Info($"***** START {Assembly.GetEntryAssembly()?.GetName().Version} *****");
 
-            HostFactory.Run(serviceConfig =>
+
+            if (args.Length > 0 && args[0] == "noservice")
             {
-                serviceConfig.UseLog4Net();
-                serviceConfig.Service<TripUpdateService>(serviceInstance =>
-                {
-                    serviceInstance.ConstructUsing(() => new TripUpdateService());
-                    serviceInstance.WhenStarted(execute => execute.Start());
-                    serviceInstance.WhenStopped(execute => execute.Stop());
-                });
+                var module = new TripUpdateService();
+                module.Start();
+            }
+            else
+            {
 
-                serviceConfig.EnableServiceRecovery(recoveryOption =>
-                {
-                    recoveryOption.RestartService(1);
-                    recoveryOption.RestartService(1);
-                    recoveryOption.RestartService(1);
-                });
 
-                serviceConfig.SetServiceName("gtfsrt_tripupdate_denormalized");
-                serviceConfig.SetDisplayName("gtfsrt_tripupdate_denormalized");
-                serviceConfig.SetDescription("Saves all trip updates for accepted routes");
-                //serviceConfig.RunAsPrompt();
+                HostFactory.Run(
+                    serviceConfig =>
+                        {
+                            serviceConfig.UseLog4Net();
+                            serviceConfig.Service<TripUpdateService>(
+                                serviceInstance =>
+                                    {
+                                        serviceInstance.ConstructUsing(() => new TripUpdateService());
+                                        serviceInstance.WhenStarted(execute => execute.Start());
+                                        serviceInstance.WhenStopped(execute => execute.Stop());
+                                    });
 
-                serviceConfig.StartAutomatically();
-            });
+                            serviceConfig.EnableServiceRecovery(
+                                recoveryOption =>
+                                    {
+                                        recoveryOption.RestartService(1);
+                                        recoveryOption.RestartService(1);
+                                        recoveryOption.RestartService(1);
+                                    });
+
+                            serviceConfig.SetServiceName("gtfsrt_tripupdate_denormalized");
+                            serviceConfig.SetDisplayName("gtfsrt_tripupdate_denormalized");
+                            serviceConfig.SetDescription("Saves all trip updates for accepted routes");
+                            //serviceConfig.RunAsPrompt();
+
+                            serviceConfig.StartAutomatically();
+                        });
+            }
         }
     }
 }

@@ -5,11 +5,12 @@ using System.Data.SqlClient;
 using System.Linq;
 using System.Reflection;
 
-using GtfsRealtimeLib;
 
 using IBI.DataAccess.DataSets;
 
 using log4net;
+
+using TransitRealtime;
 
 namespace IBI.DataAccess.Models
 {
@@ -85,20 +86,20 @@ namespace IBI.DataAccess.Models
         {
             var alerts = new List<AlertData>();
 
-            foreach (var entity in feedMessage.entity.Where(x => x.alert != null))
+            foreach (var entity in feedMessage.Entities.Where(x => x.Alert != null))
             {
-                if (entity.alert.description_text == null)
+                if (entity.Alert.DescriptionText == null)
                 {
-                    foreach (var headerTranslation in entity.alert.header_text.translation)
+                    foreach (var headerTranslation in entity.Alert.HeaderText.Translations)
                     {
                         var alert = GetAlert(feedMessage, entity, null, headerTranslation);
                         alerts.Add(alert);
                     }
                 }
                 else
-                    foreach (var translation in entity.alert.description_text.translation)
+                    foreach (var translation in entity.Alert.DescriptionText.Translations)
                     {
-                        foreach (var headerTranslation in entity.alert.header_text.translation)
+                        foreach (var headerTranslation in entity.Alert.HeaderText.Translations)
                         {
                             var alert = GetAlert(feedMessage, entity, translation, headerTranslation);
                             alerts.Add(alert);
@@ -116,34 +117,34 @@ namespace IBI.DataAccess.Models
         {
             return new AlertData
                    {
-                       AlertId = entity.id,
-                       Cause = entity.alert.cause.ToString(),
-                       DescriptionLanguage = translation?.language,
-                       DescriptionText = translation?.text,
-                       Effect = entity.alert.effect.ToString(),
-                       GtfsRealtimeVersion = feedMessage.header?.gtfs_realtime_version,
-                       HeaderLanguage = headerTranslation.language,
-                       HeaderText = headerTranslation.text,
-                       HeaderTimestamp = feedMessage.header?.timestamp ?? 0,
-                       Incrementality = feedMessage.header?.incrementality.ToString(),
-                       Url = entity.alert.url?.translation.FirstOrDefault()?.text,
-                       InformedEntities = entity.alert.informed_entity.Select(e => new AlertInformedEntityData
+                       AlertId = entity.Id,
+                       Cause = entity.Alert.cause.ToString(),
+                       DescriptionLanguage = translation?.Language,
+                       DescriptionText = translation?.Text,
+                       Effect = entity.Alert.effect.ToString(),
+                       GtfsRealtimeVersion = feedMessage.Header?.GtfsRealtimeVersion,
+                       HeaderLanguage = headerTranslation.Language,
+                       HeaderText = headerTranslation.Text,
+                       HeaderTimestamp = feedMessage.Header?.Timestamp ?? 0,
+                       Incrementality = feedMessage.Header?.incrementality.ToString(),
+                       Url = entity.Alert.Url?.Translations.FirstOrDefault()?.Text,
+                       InformedEntities = entity.Alert.InformedEntities.Select(e => new AlertInformedEntityData
                                                                                    {
-                                                                                       HeaderTimestamp = feedMessage.header.timestamp,
-                                                                                       AlertId = entity.id,
-                                                                                       AgencyId = e.agency_id,
-                                                                                       RouteId = e.route_id,
-                                                                                       RouteType = e.route_type,
-                                                                                       StopId = e.stop_id,
-                                                                                       TripId = e.trip?.trip_id
+                                                                                       HeaderTimestamp = feedMessage.Header.Timestamp,
+                                                                                       AlertId = entity.Id,
+                                                                                       AgencyId = e.AgencyId,
+                                                                                       RouteId = e.RouteId,
+                                                                                       RouteType = e.RouteType,
+                                                                                       StopId = e.StopId,
+                                                                                       TripId = e.Trip?.TripId
                                                                                    })
                                                 .ToList(),
-                       ActivePeriods = entity.alert.active_period.Select(a => new AlertActivePeriodData
+                       ActivePeriods = entity.Alert.ActivePeriods.Select(a => new AlertActivePeriodData
                                                                               {
-                                                                                  HeaderTimestamp = feedMessage.header.timestamp,
-                                                                                  AlertId = entity.id,
-                                                                                  ActivePeriodEnd = a.end,
-                                                                                  ActivePeriodStart = a.start
+                                                                                  HeaderTimestamp = feedMessage.Header.Timestamp,
+                                                                                  AlertId = entity.Id,
+                                                                                  ActivePeriodEnd = a.End,
+                                                                                  ActivePeriodStart = a.Start
                                                                               })
                                              .ToList()
                    };

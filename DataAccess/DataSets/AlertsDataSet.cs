@@ -142,7 +142,7 @@ namespace IBI.DataAccess.DataSets
             {
                 connection.Open();
 
-                var alertsTableAdapter = new rt_alertTableAdapter { Connection = connection, ClearBeforeFill = true};
+                var alertsTableAdapter = new rt_alertTableAdapter { Connection = connection, ClearBeforeFill = true };
                 var activePeriodsTableAdapter = new rt_alert_active_periodTableAdapter { Connection = connection, ClearBeforeFill = true };
                 var informedEntitiesTableAdapter = new rt_alert_informed_entityTableAdapter { Connection = connection, ClearBeforeFill = true };
 

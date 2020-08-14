@@ -5,13 +5,14 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Threading;
-
+using GtfsRealtimeLib;
 using gtfsrt_tripupdate_denormalized.DataAccess;
 
-using GtfsRealtimeLib;
 
 using log4net;
 using log4net.Config;
+
+using TransitRealtime;
 
 namespace gtfsrt_tripupdate_denormalized
 {
@@ -60,37 +61,37 @@ namespace gtfsrt_tripupdate_denormalized
         {
             var tripUpdates = new List<TripUpdateData>();
 
-            foreach (var entity in feedMessage.entity.Where(x => !AcceptedRoutes.Any() || (!string.IsNullOrEmpty(x.trip_update?.trip?.route_id) &&
-                                                                 AcceptedRoutes.Contains(x.trip_update?.trip?.route_id))))
+            foreach (var entity in feedMessage.Entities.Where(x => !AcceptedRoutes.Any() || (!string.IsNullOrEmpty(x.TripUpdate?.Trip?.RouteId) &&
+                                                                 AcceptedRoutes.Contains(x.TripUpdate?.Trip?.RouteId))))
             {
-                tripUpdates.AddRange(entity.trip_update.stop_time_update
+                tripUpdates.AddRange(entity.TripUpdate.StopTimeUpdates
                                            .Select(stopTimeUpdate => new TripUpdateData
                                                                      {
-                                                                         GtfsRealtimeVersion = feedMessage.header.gtfs_realtime_version,
-                                                                         Incrementality = feedMessage.header.incrementality.ToString(),
-                                                                         HeaderTimestamp = feedMessage.header.timestamp,
-                                                                         FeedEntityId = entity.id,
-                                                                         VehicleTimestamp = entity.trip_update?.timestamp,
+                                                                         GtfsRealtimeVersion = feedMessage.Header.GtfsRealtimeVersion,
+                                                                         Incrementality = feedMessage.Header.incrementality.ToString(),
+                                                                         HeaderTimestamp = feedMessage.Header.Timestamp,
+                                                                         FeedEntityId = entity.Id,
+                                                                         VehicleTimestamp = entity.TripUpdate?.Timestamp,
                                                                          //TripDelay = ..., TripDelay not applicable
-                                                                         TripId = entity.trip_update?.trip?.trip_id,
-                                                                         TripStartDate = entity.trip_update?.trip?.start_date,
-                                                                         TripStartTime = entity.trip_update?.trip?.start_time,
-                                                                         RouteId = entity.trip_update?.trip?.route_id,
-                                                                         DirectionId = entity.trip_update?.trip?.direction_id,
+                                                                         TripId = entity.TripUpdate?.Trip?.TripId,
+                                                                         TripStartDate = entity.TripUpdate?.Trip?.StartDate,
+                                                                         TripStartTime = entity.TripUpdate?.Trip?.StartTime,
+                                                                         RouteId = entity.TripUpdate?.Trip?.RouteId,
+                                                                         DirectionId = entity.TripUpdate?.Trip?.DirectionId,
                                                                          TripScheduleRelationship =
-                                                                             entity.trip_update?.trip?.schedule_relationship.ToString(),
-                                                                         StopSequence = stopTimeUpdate.stop_sequence,
-                                                                         StopId = stopTimeUpdate.stop_id,
+                                                                             entity.TripUpdate?.Trip?.schedule_relationship.ToString(),
+                                                                         StopSequence = stopTimeUpdate.StopSequence,
+                                                                         StopId = stopTimeUpdate.StopId,
                                                                          StopScheduleRelationship = stopTimeUpdate.schedule_relationship.ToString(),
-                                                                         PredictedArrivalTime = stopTimeUpdate.arrival?.time,
-                                                                         PredictedArrivalDelay = stopTimeUpdate.arrival?.delay,
-                                                                         PredictedArrivalUncertainty = stopTimeUpdate.arrival?.uncertainty,
-                                                                         PredictedDepartureTime = stopTimeUpdate.departure?.time,
-                                                                         PredictedDepartureDelay = stopTimeUpdate.departure?.delay,
-                                                                         PredictedDepartureUncertainty = stopTimeUpdate.departure?.uncertainty,
-                                                                         VehicleId = entity.trip_update?.vehicle?.id,
-                                                                         VehicleLabel = entity.trip_update?.vehicle?.label,
-                                                                         VehicleLicensePlate = entity.trip_update?.vehicle?.license_plate
+                                                                         PredictedArrivalTime = stopTimeUpdate.Arrival?.Time,
+                                                                         PredictedArrivalDelay = stopTimeUpdate.Arrival?.Delay,
+                                                                         PredictedArrivalUncertainty = stopTimeUpdate.Arrival?.Uncertainty,
+                                                                         PredictedDepartureTime = stopTimeUpdate.Departure?.Time,
+                                                                         PredictedDepartureDelay = stopTimeUpdate.Departure?.Delay,
+                                                                         PredictedDepartureUncertainty = stopTimeUpdate.Departure?.Uncertainty,
+                                                                         VehicleId = entity.TripUpdate?.Vehicle?.Id,
+                                                                         VehicleLabel = entity.TripUpdate?.Vehicle?.Label,
+                                                                         VehicleLicensePlate = entity.TripUpdate?.Vehicle?.LicensePlate
                                                                      }));
             }
 

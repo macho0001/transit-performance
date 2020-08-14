@@ -15,7 +15,7 @@ GO
 
 CREATE PROCEDURE dbo.ProcessRTEvent
 
---Script Version: Master - 1.1.0.0
+--Script Version: Master - 1.1.0.0 - generic-all-agencies - 1
 
 --This procedure processes all the real-time events. It is executed by the process_rt_event trigger ON INSERT into the dbo.rt_event table.
 
@@ -29,6 +29,15 @@ BEGIN
 	DECLARE @current_service_date DATE
 	SET @current_service_date = dbo.fnConvertDateTimeToServiceDate(GETDATE())
 
+	--create a table to store route types that will be processed
+	DECLARE @route_types AS TABLE
+	(
+		route_type	INT
+	)
+
+	INSERT INTO @route_types   --update for each deployment
+	VALUES
+		(3)															 
 
 	UPDATE dbo.rt_event
 		SET direction_id = t.direction_id
@@ -1343,14 +1352,14 @@ BEGIN
 					,ttt.threshold_scheduled_median_travel_time_sec
 					,ttt.threshold_historical_average_travel_time_sec 
 					,ttt.threshold_scheduled_average_travel_time_sec 
-					,(abcde.d_time_sec - abcde.b_time_sec) * par.passenger_arrival_rate AS denominator_pax
+					,(abcde.d_time_sec - abcde.b_time_sec) * ISNULL(par.passenger_arrival_rate,1) AS denominator_pax
 					,CASE
-						WHEN ((abcde.e_time_sec - abcde.d_time_sec) - ttt.threshold_historical_median_travel_time_sec > 0) THEN (abcde.d_time_sec - abcde.b_time_sec) * par.passenger_arrival_rate
+						WHEN ((abcde.e_time_sec - abcde.d_time_sec) - ttt.threshold_historical_median_travel_time_sec > 0) THEN (abcde.d_time_sec - abcde.b_time_sec) * ISNULL(par.passenger_arrival_rate,1)
 						WHEN ((abcde.e_time_sec - abcde.d_time_sec) - ttt.threshold_historical_median_travel_time_sec <= 0) THEN 0
 						ELSE 0
 					END AS historical_threshold_numerator_pax
 					,CASE
-						WHEN ((abcde.e_time_sec - abcde.d_time_sec) - ttt.threshold_scheduled_average_travel_time_sec > 0) THEN (abcde.d_time_sec - abcde.b_time_sec) * par.passenger_arrival_rate
+						WHEN ((abcde.e_time_sec - abcde.d_time_sec) - ttt.threshold_scheduled_average_travel_time_sec > 0) THEN (abcde.d_time_sec - abcde.b_time_sec) * ISNULL(par.passenger_arrival_rate,1)
 						WHEN ((abcde.e_time_sec - abcde.d_time_sec) - ttt.threshold_scheduled_average_travel_time_sec <= 0) THEN 0
 						ELSE 0
 					END AS scheduled_threshold_numerator_pax 
@@ -1403,11 +1412,16 @@ BEGIN
 								ts.time_slice_id = ttt.time_slice_id
 							AND 
 								threshold_historical_median_travel_time_sec IS NOT NULL
-							AND 
-								(ttt.route_type = 1 OR ttt.route_type = 0) --subway and green line passenger weighted numbers
+							--AND 
+							--	(ttt.route_type = 1 OR ttt.route_type = 0) --subway and green line passenger weighted numbers
 							AND
 								abcde.cde_route_id = ttt.route_id --added for multiple routes visiting the same stops, green line
 						)
+				JOIN dbo.config_mode_threshold mt
+					ON
+							mt.threshold_id = ttt.threshold_id
+						AND 
+							mt.route_type = ttt.route_type									 
 				------------------commuter rail travel times pax start-----------------------------------------
 				UNION
 				SELECT
@@ -1426,14 +1440,14 @@ BEGIN
 					,dtt.threshold_scheduled_median_travel_time_sec AS threshold_scheduled_median_travel_time_sec
 					,dtt.threshold_historical_average_travel_time_sec AS threshold_historical_average_travel_time_sec
 					,dtt.threshold_scheduled_average_travel_time_sec AS threshold_scheduled_average_travel_time_sec
-					,po.num_passenger_off_subset AS denominator_pax
+					,ISNULL(po.num_passenger_off_subset,1) AS denominator_pax
 					,CASE
-						WHEN (dat.de_time_sec - dtt.threshold_historical_median_travel_time_sec > 0) THEN po.num_passenger_off_subset
+						WHEN (dat.de_time_sec - dtt.threshold_historical_median_travel_time_sec > 0) THEN ISNULL(po.num_passenger_off_subset,1)
 						WHEN (dat.de_time_sec - dtt.threshold_historical_median_travel_time_sec <= 0) THEN 0
 						ELSE 0
 					END AS historical_threshold_numerator_pax
 					,CASE
-						WHEN (dat.de_time_sec - dtt.threshold_scheduled_average_travel_time_sec > 0) THEN po.num_passenger_off_subset
+						WHEN (dat.de_time_sec - dtt.threshold_scheduled_average_travel_time_sec > 0) THEN ISNULL(po.num_passenger_off_subset,1)
 						WHEN (dat.de_time_sec - dtt.threshold_scheduled_average_travel_time_sec <= 0) THEN 0
 						ELSE 0
 					END AS scheduled_threshold_numerator_pax 
@@ -1476,8 +1490,8 @@ BEGIN
 								dat.e_stop_id = dtt.to_stop_id
 							AND 
 								ts.time_slice_id = dtt.time_slice_id
-							AND
-								dtt.route_type = 2 --commuter rail passenger weighted numbers
+							--AND
+							--	dtt.route_type = 2 --commuter rail passenger weighted numbers
 							AND
 								dat.de_route_id = dtt.route_id --added for multiple routes visiting the same stops
 						)
@@ -1491,6 +1505,11 @@ BEGIN
 							AND 
 								dat.e_stop_id = po.to_stop_id
 						)
+				JOIN dbo.config_mode_threshold mt
+					ON
+							mt.threshold_id = dtt.threshold_id
+						AND 
+							mt.route_type = dtt.route_type				 
 			------------------------CR travel times pax end-------------------------
 
 			--Update passenger weighted wait time vs. threshold tables
@@ -1534,14 +1553,14 @@ BEGIN
 					,wtt.threshold_scheduled_median_wait_time_sec
 					,wtt.threshold_historical_average_wait_time_sec 
 					,wtt.threshold_scheduled_average_wait_time_sec 
-					,(d_time_sec - b_time_sec) * par.passenger_arrival_rate AS denominator_pax
+					,(d_time_sec - b_time_sec) * ISNULL(par.passenger_arrival_rate,1) AS denominator_pax
 					,CASE
-						WHEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_historical_median_wait_time_sec > 0) THEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_historical_median_wait_time_sec) * par.passenger_arrival_rate
+						WHEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_historical_median_wait_time_sec > 0) THEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_historical_median_wait_time_sec) * ISNULL(par.passenger_arrival_rate,1)
 						WHEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_historical_median_wait_time_sec <= 0) THEN 0
 						ELSE 0
 					END AS historical_threshold_numerator_pax
 					,CASE
-						WHEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_scheduled_average_wait_time_sec > 0) THEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_scheduled_median_wait_time_sec) * par.passenger_arrival_rate
+						WHEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_scheduled_average_wait_time_sec > 0) THEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_scheduled_median_wait_time_sec) * ISNULL(par.passenger_arrival_rate,1)
 						WHEN ((abcde.c_time_sec - abcde.b_time_sec) - wtt.threshold_scheduled_average_wait_time_sec <= 0) THEN 0
 						ELSE 0
 					END AS scheduled_threshold_numerator_pax   
@@ -1596,9 +1615,14 @@ BEGIN
 								ts.time_slice_id = wtt.time_slice_id
 							AND 
 								threshold_historical_median_wait_time_sec IS NOT NULL
+							--AND 
+							--	(wtt.route_type = 1 OR wtt.route_type = 0) --subway and green line passenger weighted numbers
+						)				
+					JOIN dbo.config_mode_threshold mt
+					ON
+							mt.threshold_id = wtt.threshold_id
 							AND 
-								(wtt.route_type = 1 OR wtt.route_type = 0) --subway and green line passenger weighted numbers
-						);
+							mt.route_type = wtt.route_type;
 
 			---headway trip metrics
 
@@ -1662,9 +1686,14 @@ BEGIN
 								bd.bd_stop_id = wtt.stop_id
 							AND 
 								ts.time_slice_id = wtt.time_slice_id
-							AND
-								(wtt.route_type = 1) --subway numbers only
+							-- AND
+							-- (wtt.route_type = 1) --subway numbers only
 						)
+				JOIN dbo.config_mode_threshold mt
+					ON
+							mt.threshold_id = wtt.threshold_id
+							AND
+							mt.route_type = wtt.route_type									 
 
 			--today rt schedule adherence weighted by passengers and trips ----
 
@@ -1709,11 +1738,11 @@ BEGIN
 					,stop_order_flag
 					,th.threshold_id
 					,thc.add_to AS threshold_value
-					,po.from_stop_passenger_on AS denominator_pax
+					,ISNULL(po.from_stop_passenger_on,1) AS denominator_pax
 					,CASE
-						WHEN sad.stop_order_flag = 1 AND sad.departure_delay_sec > thc.add_to THEN po.from_stop_passenger_on
-						WHEN sad.stop_order_flag = 2 AND sad.arrival_delay_sec > thc.add_to THEN po.from_stop_passenger_on
-						WHEN sad.stop_order_flag = 3 AND sad.arrival_delay_sec > thc.add_to THEN po.from_stop_passenger_on
+						WHEN sad.stop_order_flag = 1 AND sad.departure_delay_sec > thc.add_to THEN ISNULL(po.from_stop_passenger_on,1)
+						WHEN sad.stop_order_flag = 2 AND sad.arrival_delay_sec > thc.add_to THEN ISNULL(po.from_stop_passenger_on,1)
+						WHEN sad.stop_order_flag = 3 AND sad.arrival_delay_sec > thc.add_to THEN ISNULL(po.from_stop_passenger_on,1)
 						WHEN sad.stop_order_flag = 1 AND sad.departure_delay_sec <= thc.add_to THEN 0
 						WHEN sad.stop_order_flag = 2 AND sad.arrival_delay_sec <= thc.add_to THEN 0
 						WHEN sad.stop_order_flag = 3 AND sad.arrival_delay_sec <= thc.add_to THEN 0
@@ -1751,7 +1780,7 @@ BEGIN
 					AND 
 						mt.threshold_id = thc.threshold_id
 					AND 
-						sad.route_type = 2 -- commuter rail only
+						mt.route_type = sad.route_type
 
 			--save disaggregate travel times for today in real-time 
 
@@ -1962,6 +1991,373 @@ BEGIN
 					,cd_time_sec
 				FROM @today_rt_cd_time_temp
 
+			----start prediction accuracy real-time processing
+			--find all predictions for events that have been processed
+
+			DECLARE @today_rt_prediction_disaggregate_temp AS TABLE
+			(
+				service_date					DATE
+				,file_time						INT
+				,route_type						INT
+				,route_id						VARCHAR(255)
+				,trip_id						VARCHAR(255)
+				,direction_id					INT
+				,stop_id						VARCHAR(255)
+				,stop_sequence					INT
+				,vehicle_id						VARCHAR(255)
+				,vehicle_label					VARCHAR(255)
+				,stop_order_flag				INT
+				,scheduled_arrival_time			INT
+				,scheduled_departure_time		INT
+				,predicted_arrival_time			INT
+				,predicted_departure_time		INT
+				,predicted_arrival_time_sec		INT
+				,predicted_departure_time_sec	INT
+				,actual_arrival_time			INT
+				,actual_departure_time			INT
+				,arrival_seconds_away			INT
+				,departure_seconds_away			INT
+				,arrival_prediction_error		INT
+				,departure_prediction_error		INT
+			)
+
+			INSERT INTO @today_rt_prediction_disaggregate_temp
+			(
+				service_date					
+				,file_time
+				,route_type										
+				,route_id						
+				,trip_id						
+				,direction_id					
+				,stop_id						
+				,stop_sequence					
+				,vehicle_id						
+				,vehicle_label					
+				,stop_order_flag				
+				,scheduled_arrival_time			
+				,scheduled_departure_time		
+				,predicted_arrival_time			
+				,predicted_departure_time	
+				,predicted_arrival_time_sec		
+				,predicted_departure_time_sec		
+				,actual_arrival_time			
+				,actual_departure_time			
+				,arrival_seconds_away			
+				,departure_seconds_away			
+				,arrival_prediction_error		
+				,departure_prediction_error		
+			)
+
+			SELECT
+				uef.service_date
+				,p.header_timestamp
+				,st.route_type
+				,p.route_id
+				,p.trip_id
+				,uef.direction_id
+				,p.stop_id
+				,p.stop_sequence
+				,p.vehicle_id
+				,p.vehicle_label
+				,st.stop_order_flag
+				,dbo.fnConvertDateTimeToEpoch(st.service_date)+st.arrival_time_sec AS scheduled_arrival_time
+				,dbo.fnConvertDateTimeToEpoch(st.service_date)+st.departure_time_sec AS scheduled_departure_time
+				,p.predicted_arrival_time
+				,p.predicted_departure_time
+				,p.predicted_arrival_time - dbo.fnConvertDateTimeToEpoch(p.trip_start_date)
+				,p.predicted_departure_time - dbo.fnConvertDateTimeToEpoch(p.trip_start_date)
+				,CASE
+					WHEN uef.event_type = 'ARR' THEN uef.event_time
+					ELSE NULL
+				END as actual_arrival_time
+				,CASE
+					WHEN uef.event_type = 'DEP' THEN uef.event_time
+					ELSE NULL
+				END as actual_departure_time
+				,CASE
+					WHEN uef.event_type = 'ARR' THEN uef.event_time - p.header_timestamp
+					ELSE NULL
+				END as arrival_seconds_away
+				,CASE
+					WHEN uef.event_type = 'DEP' THEN uef.event_time - p.header_timestamp
+					ELSE NULL
+				END as departure_seconds_away
+				,CASE
+					WHEN uef.event_type = 'ARR' THEN uef.event_time - p.predicted_arrival_time
+					ELSE NULL
+				END as arrival_prediction_error
+				,CASE
+					WHEN uef.event_type = 'DEP' THEN uef.event_time - p.predicted_departure_time
+					ELSE NULL
+				END as departure_prediction_error
+			FROM @unprocessed_events_file uef
+			JOIN dbo.gtfsrt_tripupdate_denormalized p
+			ON
+					uef.service_date = CONVERT(DATE, p.trip_start_date)
+				AND
+					uef.trip_id = p.trip_id
+				AND
+					uef.stop_id = p.stop_id
+				AND
+					uef.stop_sequence = p.stop_sequence
+			LEFT JOIN dbo.today_stop_times_sec st
+			ON
+					uef.service_date = st.service_date
+				AND
+					uef.trip_id = st.trip_id
+				AND
+					uef.stop_id = st.stop_id
+				AND
+					uef.stop_sequence = st.stop_sequence 
+			
+			--SELECT * FROM @today_rt_prediction_disaggregate_temp
+			
+			DECLARE @today_rt_prediction_threshold_temp AS TABLE
+			(
+				service_date				DATE			
+				,file_time					INT				
+				,route_type					INT
+				,route_id					VARCHAR(255)	
+				,trip_id					VARCHAR(255)	
+				,direction_id				INT				
+				,stop_id					VARCHAR(255)	
+				,stop_sequence				INT
+				,vehicle_id						VARCHAR(255)
+				,vehicle_label					VARCHAR(255)				
+				,stop_order_flag			INT 
+				,predicted_time				INT
+				,actual_time				INT
+				,time_slice_id				VARCHAR(255)
+				,seconds_away				INT
+				,prediction_error			INT
+				,threshold_id				VARCHAR(255)
+				,bin_lower					INT
+				,bin_upper					INT
+				,pred_error_threshold_lower	INT
+				,pred_error_threshold_upper	INT
+				,prediction_within_threshold INT
+				,prediction_in_bin			INT	
+			)
+
+			INSERT INTO @today_rt_prediction_threshold_temp
+			(
+				service_date							
+				,file_time									
+				,route_type					
+				,route_id					
+				,trip_id						
+				,direction_id								
+				,stop_id						
+				,stop_sequence
+				,vehicle_id
+				,vehicle_label								
+				,stop_order_flag			 
+				,predicted_time				
+				,actual_time				
+				,time_slice_id				
+				,seconds_away				
+				,prediction_error			
+				,threshold_id				
+				,bin_lower					
+				,bin_upper					
+				,pred_error_threshold_lower	
+				,pred_error_threshold_upper	
+				,prediction_within_threshold 
+				,prediction_in_bin				
+			)
+
+			SELECT
+				t.service_date
+				,t.file_time
+				,t.route_type
+				,t.route_id
+				,t.trip_id
+				,t.direction_id
+				,t.stop_id
+				,t.stop_sequence
+				,t.vehicle_id
+				,t.vehicle_label
+				,t.stop_order_flag
+				,t.predicted_time
+				,t.actual_time
+				,b.time_slice_id
+				,t.seconds_away
+				,t.prediction_error
+				,a.threshold_id
+				,a.bin_lower
+				,a.bin_upper
+				,a.pred_error_threshold_lower
+				,a.pred_error_threshold_upper
+				,CASE 
+					WHEN prediction_error BETWEEN a.pred_error_threshold_lower AND a.pred_error_threshold_upper THEN 1
+					ELSE 0
+				END AS prediction_within_thresholds
+				,1 AS prediction_in_bin
+			FROM 
+				(
+					SELECT 
+						b.service_date
+						,b.route_type
+						,b.route_id
+						,b.trip_id
+						,b.direction_id
+						,b.stop_id
+						,b.stop_sequence
+						,b.vehicle_id
+						,b.vehicle_label
+						,b.stop_order_flag
+						,b.file_time
+						,CASE
+								WHEN b.stop_order_flag = 1 THEN b.predicted_departure_time
+								WHEN b.stop_order_flag = 2 THEN b.predicted_arrival_time
+								WHEN b.stop_order_flag = 3 THEN b.predicted_arrival_time
+							END AS predicted_time
+						,CASE
+							WHEN b.stop_order_flag = 1 THEN b.predicted_departure_time_sec
+							WHEN b.stop_order_flag = 2 THEN b.predicted_arrival_time_sec
+							WHEN b.stop_order_flag = 3 THEN b.predicted_arrival_time_sec
+						END AS predicted_time_sec
+						,CASE
+								WHEN b.stop_order_flag = 1 THEN b.actual_departure_time
+								WHEN b.stop_order_flag = 2 THEN b.actual_arrival_time
+								WHEN b.stop_order_flag = 3 THEN b.actual_arrival_time
+							END AS actual_time
+						,CASE
+								WHEN b.stop_order_flag = 1 THEN b.departure_seconds_away
+								WHEN b.stop_order_flag = 2 THEN b.arrival_seconds_away
+								WHEN b.stop_order_flag = 3 THEN b.arrival_seconds_away
+							END AS seconds_away 
+						,CASE
+								WHEN b.stop_order_flag = 1 THEN b.departure_prediction_error
+								WHEN b.stop_order_flag = 2 THEN b.arrival_prediction_error
+								WHEN b.stop_order_flag = 3 THEN b.arrival_prediction_error
+							END AS prediction_error
+					FROM @today_rt_prediction_disaggregate_temp b 
+				) AS t
+			JOIN dbo.config_prediction_threshold a
+			ON
+					t.seconds_away >= a.bin_lower
+				AND
+					t.seconds_away <= a.bin_upper 
+				AND
+					a.route_type = t.route_type
+				AND
+					t.actual_time IS NOT NULL
+			JOIN dbo.config_time_slice b
+			ON
+					t.predicted_time_sec >= b.time_slice_start_sec
+				AND
+					t.predicted_time_sec < b.time_slice_end_sec	
+
+			SELECT * FROM @today_rt_prediction_threshold_temp
+
+			--insert into today_rt prediction tables from @today_rt tables
+
+			INSERT INTO dbo.today_rt_prediction_disaggregate
+			(
+				service_date
+				,file_time
+				,route_type
+				,route_id
+				,trip_id
+				,direction_id
+				,stop_id
+				,stop_sequence
+				,vehicle_id
+				,vehicle_label
+				,stop_order_flag
+				,scheduled_arrival_time
+				,scheduled_departure_time
+				,predicted_arrival_time
+				,predicted_departure_time
+				,predicted_arrival_time_sec
+				,predicted_departure_time_sec
+				,actual_arrival_time
+				,actual_departure_time
+				,arrival_seconds_away
+				,departure_seconds_away
+				,arrival_prediction_error
+				,departure_prediction_error
+			)
+			
+			SELECT
+				service_date
+				,file_time
+				,route_type
+				,route_id
+				,trip_id
+				,direction_id
+				,stop_id
+				,stop_sequence
+				,vehicle_id
+				,vehicle_label
+				,stop_order_flag
+				,scheduled_arrival_time
+				,scheduled_departure_time
+				,predicted_arrival_time
+				,predicted_departure_time
+				,predicted_arrival_time_sec
+				,predicted_departure_time_sec
+				,actual_arrival_time
+				,actual_departure_time
+				,arrival_seconds_away
+				,departure_seconds_away
+				,arrival_prediction_error
+				,departure_prediction_error
+			FROM @today_rt_prediction_disaggregate_temp
+			
+			INSERT INTO dbo.today_rt_prediction_threshold
+			(
+			   service_date
+			   ,file_time
+			   ,route_type
+			   ,route_id
+			   ,trip_id
+			   ,direction_id
+			   ,stop_id
+			   ,stop_sequence
+			   ,vehicle_id
+			   ,vehicle_label
+			   ,stop_order_flag
+			   ,predicted_time
+			   ,actual_time
+			   ,time_slice_id
+			   ,seconds_away
+			   ,prediction_error
+			   ,threshold_id
+			   ,bin_lower
+			   ,bin_upper
+			   ,pred_error_threshold_lower
+			   ,pred_error_threshold_upper
+			   ,prediction_within_threshold
+			   ,prediction_in_bin
+			)
+
+			SELECT
+				service_date
+			   ,file_time
+			   ,route_type
+			   ,route_id
+			   ,trip_id
+			   ,direction_id
+			   ,stop_id
+			   ,stop_sequence
+			   ,vehicle_id
+			   ,vehicle_label
+			   ,stop_order_flag
+			   ,predicted_time
+			   ,actual_time
+			   ,time_slice_id
+			   ,seconds_away
+			   ,prediction_error
+			   ,threshold_id
+			   ,bin_lower
+			   ,bin_upper
+			   ,pred_error_threshold_lower
+			   ,pred_error_threshold_upper
+			   ,prediction_within_threshold
+			   ,prediction_in_bin
+			FROM @today_rt_prediction_threshold_temp													 
 			--set event_processed_rt flag to 1 to indicate that the record has been processed
 			UPDATE dbo.rt_event
 				SET event_processed_rt = 1
@@ -1985,6 +2381,10 @@ BEGIN
 
 			DELETE FROM @today_rt_de_time_temp
 
+			DELETE FROM @today_rt_prediction_disaggregate_temp
+
+			DELETE FROM @today_rt_prediction_threshold_temp
+			
 			SET @file_time_num_current = @file_time_num_current + 1
 
 		END

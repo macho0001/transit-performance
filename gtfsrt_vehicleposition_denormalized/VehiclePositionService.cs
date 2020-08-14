@@ -5,13 +5,14 @@ using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Threading;
-
+using GtfsRealtimeLib;
 using gtfsrt_vehicleposition_denormalized.DataAccess;
 
-using GtfsRealtimeLib;
 
 using log4net;
 using log4net.Config;
+
+using TransitRealtime;
 
 namespace gtfsrt_vehicleposition_denormalized
 {
@@ -59,35 +60,35 @@ namespace gtfsrt_vehicleposition_denormalized
         {
             var vehiclePositions = new List<VehiclePositionData>();
 
-            foreach (var entity in feedMessage.entity.Where(x => !AcceptedRoutes.Any() || (!string.IsNullOrEmpty(x.vehicle?.trip?.route_id) &&
-                                                                                           AcceptedRoutes.Contains(x.vehicle?.trip?.route_id))))
+            foreach (var entity in feedMessage.Entities.Where(x => !AcceptedRoutes.Any() || (!string.IsNullOrEmpty(x.Vehicle?.Trip?.RouteId) &&
+                                                                                           AcceptedRoutes.Contains(x.Vehicle?.Trip?.RouteId))))
             {
                 vehiclePositions.Add(new VehiclePositionData
                                      {
-                                         gtfs_realtime_version = feedMessage.header.gtfs_realtime_version,
-                                         incrementality = feedMessage.header.incrementality.ToString(),
-                                         header_timestamp = feedMessage.header.timestamp,
-                                         feed_entity_id = entity.id,
-                                         trip_id = entity.vehicle?.trip?.trip_id,
-                                         route_id = entity.vehicle?.trip?.route_id,
-                                         direction_id = entity.vehicle?.trip?.direction_id,
-                                         trip_start_date = entity.vehicle?.trip?.start_date,
-                                         trip_start_time = entity.vehicle?.trip?.start_time,
-                                         trip_schedule_relationship = entity.vehicle?.trip?.schedule_relationship.ToString(),
-                                         vehicle_id = entity.vehicle?.vehicle?.id,
-                                         vehicle_label = entity.vehicle?.vehicle?.label,
-                                         vehicle_license_plate = entity.vehicle?.vehicle?.license_plate,
-                                         vehicle_timestamp = entity.vehicle?.timestamp,
-                                         current_stop_sequence = entity.vehicle?.current_stop_sequence,
-                                         current_status = entity.vehicle?.current_status.ToString(),
-                                         stop_id = entity.vehicle?.stop_id,
-                                         congestion_level = entity.vehicle?.congestion_level.ToString(),
-                                         occupancy_status = null, //where to get this from?
-                                         latitude = entity.vehicle?.position?.latitude,
-                                         longitude = entity.vehicle?.position?.longitude,
-                                         bearing = entity.vehicle?.position?.bearing,
-                                         odometer = entity.vehicle?.position?.odometer,
-                                         speed = entity.vehicle?.position?.speed
+                                         gtfs_realtime_version = feedMessage.Header.GtfsRealtimeVersion,
+                                         incrementality = feedMessage.Header.incrementality.ToString(),
+                                         header_timestamp = feedMessage.Header.Timestamp,
+                                         feed_entity_id = entity.Id,
+                                         trip_id = entity.Vehicle?.Trip?.TripId,
+                                         route_id = entity.Vehicle?.Trip?.RouteId,
+                                         direction_id = entity.Vehicle?.Trip?.DirectionId,
+                                         trip_start_date = entity.Vehicle?.Trip?.StartDate,
+                                         trip_start_time = entity.Vehicle?.Trip?.StartTime,
+                                         trip_schedule_relationship = entity.Vehicle?.Trip?.schedule_relationship.ToString(),
+                                         vehicle_id = entity.Vehicle?.Vehicle?.Id,
+                                         vehicle_label = entity.Vehicle?.Vehicle?.Label,
+                                         vehicle_license_plate = entity.Vehicle?.Vehicle?.LicensePlate,
+                                         vehicle_timestamp = entity.Vehicle?.Timestamp,
+                                         current_stop_sequence = entity.Vehicle?.CurrentStopSequence,
+                                         current_status = entity.Vehicle?.CurrentStatus.ToString(),
+                                         stop_id = entity.Vehicle?.StopId,
+                                         congestion_level = entity.Vehicle?.congestion_level.ToString(),
+                                         occupancy_status = entity.Vehicle?.occupancy_status.ToString(), 
+                                         latitude = entity.Vehicle?.Position?.Latitude,
+                                         longitude = entity.Vehicle?.Position?.Longitude,
+                                         bearing = entity.Vehicle?.Position?.Bearing,
+                                         odometer = entity.Vehicle?.Position?.Odometer,
+                                         speed = entity.Vehicle?.Position?.Speed
                                      });
             }
 

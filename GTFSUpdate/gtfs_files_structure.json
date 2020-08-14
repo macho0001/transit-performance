@@ -185,6 +185,10 @@
 		"checkpoint_id": {
 		    "required": false,
 		    "type": "VARCHAR(255)"
+		},
+		"stop_order_flag": {
+			"required": false,
+			"type": "INT"
 		}
             }
         },
@@ -402,9 +406,14 @@
                     "index": true,
                     "required": false,
                     "type": "DATE"
+                },
+				"feed_version": {
+                    "index": true,
+                    "required": false,
+                    "type": "VARCHAR(255)"
                 }
             },
-            "required": false
+            "required": true
         },
 	"checkpoints": {
 	    "columns": {

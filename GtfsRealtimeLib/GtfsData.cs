@@ -10,6 +10,8 @@ using Newtonsoft.Json;
 
 using ProtoBuf;
 
+using TransitRealtime;
+
 namespace GtfsRealtimeLib
 {
     public delegate void NewFeedMessageEventHandler(FeedMessage feedMessage);
@@ -99,7 +101,7 @@ namespace GtfsRealtimeLib
 
             WriteFeedMessageToFile(feedMessage);
 
-            var fileTimestamp = feedMessage.header.timestamp;
+            var fileTimestamp = feedMessage.Header.Timestamp;
             if (fileTimestamp == FileTimestamp)
             {
                 Log.Info("Current file has same timestamp as previous one.");

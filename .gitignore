@@ -1,0 +1,27 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/AppLauncher/bin/Debug
+/AppLauncher/obj/Debug
+/ConfigUpdate/bin/Debug
+/ConfigUpdate/obj/Debug
+/DataAccess/bin/Debug
+/DataAccess/obj/Debug
+/GtfsRealtimeLib/bin/Debug
+/GtfsRealtimeLib/obj/Debug
+/gtfsrt_alerts/bin/Debug
+/gtfsrt_alerts/obj/Debug
+/gtfsrt_events_tu_latest_prediction/bin/Debug
+/gtfsrt_events_tu_latest_prediction/obj/Debug
+/gtfsrt_events_vp_current_status/bin/Debug
+/gtfsrt_events_vp_current_status/obj/Debug
+/gtfsrt_tripupdate_denormalized/bin/Debug
+/gtfsrt_tripupdate_denormalized/obj/Debug
+/gtfsrt_vehicleposition_denormalized/bin/Debug
+/gtfsrt_vehicleposition_denormalized/obj/Debug
+/GTFSUpdate/bin/Debug
+/GTFSUpdate/obj/Debug
+/packages
+*.user
+/.vs/TRANSIT-performance/v16

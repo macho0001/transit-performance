@@ -12,37 +12,54 @@ namespace gtfsrt_alerts
     {
         internal static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static void Main()
+        private static void Main(string[] args)
         {
             XmlConfigurator.Configure();
+
+            
+
             var instanceName = ConfigurationManager.AppSettings["SERVICENAME"] ?? "gtfsrt_alerts";
             Log.Info($"***** START - Version {Assembly.GetExecutingAssembly().GetName().Version} *****");
             Log.Info(instanceName);
 
-            HostFactory.Run(serviceConfig =>
+            if (args.Length > 0 && args[0] == "noservice")
             {
-                serviceConfig.UseLog4Net();
-                serviceConfig.Service<AlertService>(serviceInstance =>
-                {
-                    serviceInstance.ConstructUsing(() => new AlertService());
-                    serviceInstance.WhenStarted(execute => execute.Start());
-                    serviceInstance.WhenStopped(execute => execute.Stop());
-                });
+                var module = new AlertService();
+                module.Start();
+            }
+            else
+            {
 
-                serviceConfig.EnableServiceRecovery(recoveryOption =>
-                {
-                    recoveryOption.RestartService(1);
-                    recoveryOption.RestartService(1);
-                    recoveryOption.RestartService(1);
-                });
 
-                serviceConfig.SetServiceName(instanceName);
-                serviceConfig.SetDisplayName(instanceName);
-                serviceConfig.SetDescription(ConfigurationManager.AppSettings["SERVICEDESCRIPTION"] ?? "gtfsrt_alerts");
-                //serviceConfig.RunAsPrompt();
 
-                serviceConfig.StartAutomatically();
-            });
+                HostFactory.Run(
+                    serviceConfig =>
+                        {
+                            serviceConfig.UseLog4Net();
+                            serviceConfig.Service<AlertService>(
+                                serviceInstance =>
+                                    {
+                                        serviceInstance.ConstructUsing(() => new AlertService());
+                                        serviceInstance.WhenStarted(execute => execute.Start());
+                                        serviceInstance.WhenStopped(execute => execute.Stop());
+                                    });
+
+                            serviceConfig.EnableServiceRecovery(
+                                recoveryOption =>
+                                    {
+                                        recoveryOption.RestartService(1);
+                                        recoveryOption.RestartService(1);
+                                        recoveryOption.RestartService(1);
+                                    });
+
+                            serviceConfig.SetServiceName(instanceName);
+                            serviceConfig.SetDisplayName(instanceName);
+                            serviceConfig.SetDescription(ConfigurationManager.AppSettings["SERVICEDESCRIPTION"] ?? "gtfsrt_alerts");
+                            //serviceConfig.RunAsPrompt();
+
+                            serviceConfig.StartAutomatically();
+                        });
+            }
         }
     }
 }

@@ -12,37 +12,52 @@ namespace gtfsrt_vehicleposition_denormalized
     {
         internal static ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static void Main()
+        private static void Main(string[] args)
         {
             XmlConfigurator.Configure();
             Log.Info($"***** START - Version {Assembly.GetExecutingAssembly().GetName().Version} *****");
             var instanceName = ConfigurationManager.AppSettings["SERVICENAME"] ?? "gtfsrt_vehicleposition_denormalized";
             Log.Info(instanceName);
 
-            HostFactory.Run(serviceConfig =>
+
+
+            if (args.Length > 0 && args[0] == "noservice")
             {
-                serviceConfig.UseLog4Net();
-                serviceConfig.Service<VehiclePositionService>(serviceInstance =>
-                {
-                    serviceInstance.ConstructUsing(() => new VehiclePositionService());
-                    serviceInstance.WhenStarted(execute => execute.Start());
-                    serviceInstance.WhenStopped(execute => execute.Stop());
-                });
+                var module = new VehiclePositionService();
+                module.Start();
+            }
+            else
+            {
 
-                serviceConfig.EnableServiceRecovery(recoveryOption =>
-                {
-                    recoveryOption.RestartService(1);
-                    recoveryOption.RestartService(1);
-                    recoveryOption.RestartService(1);
-                });
 
-                serviceConfig.SetServiceName(instanceName);
-                serviceConfig.SetDisplayName(instanceName);
-                serviceConfig.SetDescription(ConfigurationManager.AppSettings["SERVICEDESCRIPTION"] ?? "gtfsrt_vehicleposition_denormalized");
-                //serviceConfig.RunAsPrompt();
+                HostFactory.Run(
+                    serviceConfig =>
+                        {
+                            serviceConfig.UseLog4Net();
+                            serviceConfig.Service<VehiclePositionService>(
+                                serviceInstance =>
+                                    {
+                                        serviceInstance.ConstructUsing(() => new VehiclePositionService());
+                                        serviceInstance.WhenStarted(execute => execute.Start());
+                                        serviceInstance.WhenStopped(execute => execute.Stop());
+                                    });
 
-                serviceConfig.StartAutomatically();
-            });
+                            serviceConfig.EnableServiceRecovery(
+                                recoveryOption =>
+                                    {
+                                        recoveryOption.RestartService(1);
+                                        recoveryOption.RestartService(1);
+                                        recoveryOption.RestartService(1);
+                                    });
+
+                            serviceConfig.SetServiceName(instanceName);
+                            serviceConfig.SetDisplayName(instanceName);
+                            serviceConfig.SetDescription(ConfigurationManager.AppSettings["SERVICEDESCRIPTION"] ?? "gtfsrt_vehicleposition_denormalized");
+                            //serviceConfig.RunAsPrompt();
+
+                            serviceConfig.StartAutomatically();
+                        });
+            }
         }
     }
 }
